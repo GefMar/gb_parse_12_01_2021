@@ -1,101 +1,82 @@
 import json
-import time
-from pathlib import Path
 import requests
+import time
 
 
-"""
-GET
-POST 
-PUT 
-PUTCH
-DELETE
-"""
-
-"""
-1xx - Information
-2xx - OK
-3xx - Redirect
-4xx - Client error
-5xx - Server error
-"""
-
-
-# ?store=&records_per_page=12&page=1&categories=&ordering=&price_promo__gte=&price_promo__lte=&search=
-# url = "https://5ka.ru/api/v2/special_offers/"
-# params = {
-#     "records_per_page": 100,
-#     "page": 1,
-# }
-# headers = {
-#     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.16; rv:84.0) Gecko/20100101 Firefox/84.0",
-#     "Accept-Language": "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3",
-# }
-#
-# response: requests.Response = requests.get(url, params=params, headers=headers)
-#
-# with open("5ka.ru.html", "w", encoding="UTF-8") as file:
-#     file.write(response.text)
-# print(1)
-#
-
-
-class ParseError(Exception):
-    def __init__(self, txt):
-        self.txt = txt
-
-
-class Parse5ka:
-    params = {
-        "records_per_page": 100,
-        "page": 1,
+class Parser5ka:
+    _params = {
+        "records_per_page": 50,
     }
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.16; rv:84.0) Gecko/20100101 Firefox/84.0",
-        "Accept-Language": "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3",
+    _headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:81.0) Gecko/20100101 Firefox/81.0",
     }
 
-    def __init__(self, start_url, result_path):
+    def __init__(self, start_url):
         self.start_url = start_url
-        self.result_path = result_path
 
     @staticmethod
-    def __get_response(url, *args, **kwargs) -> requests.Response:
+    def _get(*args, **kwargs):
         while True:
             try:
-                response = requests.get(url, *args, **kwargs)
-                if response.status_code > 399:
-                    raise ParseError(response.status_code)
+                response = requests.get(*args, **kwargs)
+                if response.status_code != 200:
+                    raise Exception  # todo сделать класс ошибки для работы со статусами
                 time.sleep(0.1)
                 return response
-            except (requests.RequestException, ParseError):
-                time.sleep(0.5)
-                continue
+            # todo Обработать конкретные ошибки
+            except Exception:
+                time.sleep(0.250)
 
     def run(self):
-        for product in self.parse(self.start_url):
-            path = self.result_path.joinpath(f"{product['id']}.json")
-            self.save(product, path)
+        for products in self.parse(self.start_url):
+            for product in products:
+                self.save_to_json_file(product, product["id"])
 
     def parse(self, url):
-        params = self.params
+        if not url:
+            url = self.start_url
+        params = self._params
         while url:
-            response = self.__get_response(url, params=params, headers=self.headers)
+            response = self._get(url, params=params, headers=self._headers)
             if params:
                 params = {}
-            data = json.loads(response.text)
+            data: dict = response.json()
             url = data.get("next")
-            for product in data.get("results"):
-                yield product
+
+            yield data.get("results")
 
     @staticmethod
-    def save(data, path: Path):
-        with path.open("w", encoding="UTF-8") as file:
+    def save_to_json_file(data: dict, file_name):
+        with open(f"products/{file_name}.json", "w", encoding="UTF-8") as file:
             json.dump(data, file, ensure_ascii=False)
 
 
+class ParserCatalog(Parser5ka):
+    def __init__(self, start_url, category_url):
+        self.category_url = category_url
+        super().__init__(start_url)
+
+    def get_categories(self, url):
+        response = requests.get(url, headers=self._headers)
+        return response.json()
+
+    def run(self):
+        for category in self.get_categories(self.category_url):
+            data = {
+                "name": category["parent_group_name"],
+                "code": category["parent_group_code"],
+                "products": [],
+            }
+
+            self._params["categories"] = category["parent_group_code"]
+
+            for products in self.parse(self.start_url):
+                data["products"].extend(products)
+            self.save_to_json_file(data, category["parent_group_code"])
+
+
 if __name__ == "__main__":
-    result_path = Path(__file__).parent.joinpath("products")
-    url = "https://5ka.ru/api/v2/special_offers/"
-    parser = Parse5ka(url, result_path)
+    parser = ParserCatalog(
+        "https://5ka.ru/api/v2/special_offers/", "https://5ka.ru/api/v2/categories/"
+    )
     parser.run()
