@@ -1,10 +1,26 @@
 import os
+import datetime as dt
 from dotenv import load_dotenv
 import requests
 from urllib.parse import urljoin
 import bs4
 import pymongo
 
+MONTHS = {
+    "янв": 1,
+    "фев": 2,
+    "мар": 3,
+    "апр": 4,
+    "май": 5,
+    "мая": 5,
+    "июн": 6,
+    "июл": 7,
+    "авг": 8,
+    "сен": 9,
+    "окт": 10,
+    "ноя": 11,
+    "дек": 12,
+}
 
 class MagnitParser:
     def __init__(self, start_url, data_base):
@@ -17,14 +33,48 @@ class MagnitParser:
         response = requests.get(url, *args, **kwargs)
         return response
 
-    @property
-    def data_template(self):
+    def data_template(self, dates):
         return {
-            "url": lambda tag: urljoin(self.start_url, tag.attrs.get("href")),
-            "title": lambda tag: tag.find(
-                "div", attrs={"class": "card-sale__title"}
+            "url": lambda soups: urljoin(self.start_url, soups.attrs.get("href")),
+            "promo_name": lambda soups: soups.find(
+                "div", attrs={"class": "card-sale__header"}
             ).text,
+            "product_name": lambda soups: str(
+                soups.find("div", attrs={"class": "card-sale__title"}).text
+            ),
+            "old_price": lambda soups: float(
+                ".".join(
+                    itm
+                    for itm in soups.find(
+                        "div", attrs={"class": "label__price_old"}
+                    ).text.split()
+                )
+            ),
+            "new_price": lambda soups: float(
+                ".".join(
+                    itm
+                    for itm in soups.find(
+                        "div", attrs={"class": "label__price_new"}
+                    ).text.split()
+                )
+            ),
+            "image_url": lambda soups: urljoin(
+                self.start_url, soups.find("img").attrs.get("data-src")
+            ),
+            "date_from": lambda _: next(dates),
+            "date_to": lambda _: next(dates),
         }
+
+    @staticmethod
+    def date_parse(date_string: str):
+        date_list = date_string.replace("с ", "", 1).replace("\n", "").split("до")
+        for date in date_list:
+            temp_date = date.split()
+            yield dt.datetime(
+                year=dt.datetime.now().year,
+                day=int(temp_date[0]),
+                month=MONTHS[temp_date[1][:3]],
+            )
 
     @staticmethod
     def __get_soup(response):
@@ -47,11 +97,17 @@ class MagnitParser:
 
     def __get_product_data(self, product_tag):
         data = {}
-        for key, pattern in self.data_template.items():
+        try:
+            dt_parser = self.date_parse(
+                product_tag.find("div", attrs={"class": "card-sale__date"}).text
+            )
+        except AttributeError:
+            dt_parser = None
+        for key, pattern in self.data_template(dt_parser).items():
             try:
                 data[key] = pattern(product_tag)
-            except AttributeError:
-                continue
+            except (AttributeError, TypeError):
+                data[key] = None
         return data
 
     def save(self, data):
