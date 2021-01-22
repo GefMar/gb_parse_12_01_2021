@@ -1,26 +1,28 @@
 import os
 import requests
 import bs4
-from dotenv import load_dotenv
 from urllib.parse import urljoin
-import database
+from dotenv import load_dotenv
+
+from database import Database
+
+# todo обойти пагинацию блога
+# todo обойти каждую статью
+# todo Извлечь данные: Url, Заголовок, имя автора, url автора, список тегов (url, имя)
+
 
 class GbParse:
-    def __init__(self, start_url, db):
-        self.db = db
+    def __init__(self, start_url, database):
         self.start_url = start_url
-        self.done_url = set()
+        self.done_urls = set()
         self.tasks = [self.parse_task(self.start_url, self.pag_parse)]
-        self.done_url.add(self.start_url)
-
-    @staticmethod
-    def _get_response(*args, **kwargs):
-        # TODO обработки ошибок
-        return requests.get(*args, **kwargs)
+        self.done_urls.add(self.start_url)
+        self.database = database
 
     def _get_soup(self, *args, **kwargs):
-        response = self._get_response(*args, **kwargs)
-        return bs4.BeautifulSoup(response.text, "lxml")
+        response = requests.get(*args, **kwargs)
+        soup = bs4.BeautifulSoup(response.text, "lxml")
+        return soup
 
     def parse_task(self, url, callback):
         def wrap():
@@ -33,51 +35,49 @@ class GbParse:
         for task in self.tasks:
             result = task()
             if result:
-                self.save(result)
+                self.database.create_post(result)
 
-    def pag_parse(self, url, soup):
-        for a_tag in soup.find("ul", attrs={"class": "gb__pagination"}).find_all("a"):
-            pag_url = urljoin(url, a_tag.get("href"))
-            if pag_url not in self.done_url:
-                task = self.parse_task(pag_url, self.pag_parse)
-                self.tasks.append(task)
-            self.done_url.add(pag_url)
-        for a_post in soup.find("div", attrs={"class": "post-items-wrapper"}).find_all(
-            "a", attrs={"class": "post-item__title"}
-        ):
-            post_url = urljoin(url, a_post.get("href"))
-            if post_url not in self.done_url:
-                task = self.parse_task(post_url, self.post_parse)
-                self.tasks.append(task)
-            self.done_url.add(post_url)
-
-    def post_parse(self, url, soup):
-        title = soup.find("h1", attrs={"class": "blogpost-title"}).text
+    def post_parse(self, url, soup: bs4.BeautifulSoup) -> dict:
         author_name_tag = soup.find("div", attrs={"itemprop": "author"})
-
-        author = {
-            "url": urljoin(url, author_name_tag.parent.get("href")),
-            "name": author_name_tag.text,
-        }
-        tags = [
-            {"name": tag.text, "url": urljoin(url, tag.get("href"))}
-            for tag in soup.find("article").find_all("a", attrs={"class": "small"})
-        ]
-
-        return {
+        data = {
             "post_data": {
                 "url": url,
-                "title": title,
+                "title": soup.find("h1", attrs={"class": "blogpost-title"}).text,
             },
-            "author": author,
-            "tags": tags,
+            "author": {
+                "url": urljoin(url, author_name_tag.parent.get("href")),
+                "name": author_name_tag.text,
+            },
+            "tags": [
+                {
+                    "name": tag.text,
+                    "url": urljoin(url, tag.get("href")),
+                }
+                for tag in soup.find_all("a", attrs={"class": "small"})
+            ],
         }
+        return data
 
-    def save(self, data: dict):
-        self.db.create_post(data)
+    def pag_parse(self, url, soup: bs4.BeautifulSoup):
+        gb_pagination = soup.find("ul", attrs={"class": "gb__pagination"})
+        a_tags = gb_pagination.find_all("a")
+        for a in a_tags:
+            pag_url = urljoin(url, a.get("href"))
+            if pag_url not in self.done_urls:
+                task = self.parse_task(pag_url, self.pag_parse)
+                self.tasks.append(task)
+                self.done_urls.add(pag_url)
+
+        posts_urls = soup.find_all("a", attrs={"class": "post-item__title"})
+        for post_url in posts_urls:
+            post_href = urljoin(url, post_url.get("href"))
+            if post_href not in self.done_urls:
+                task = self.parse_task(post_href, self.post_parse)
+                self.tasks.append(task)
+                self.done_urls.add(post_href)
 
 
 if __name__ == "__main__":
-    load_dotenv('.env')
-    parser = GbParse("https://geekbrains.ru/posts", database.Database(os.getenv("SQLDB_URL")))
+    load_dotenv(".env")
+    parser = GbParse("https://geekbrains.ru/posts", Database(os.getenv("SQL_DB")))
     parser.run()
