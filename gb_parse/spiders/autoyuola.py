@@ -10,14 +10,13 @@ class AutoyuolaSpider(scrapy.Spider):
         "pagination": "div.Paginator_block__2XAPy a.Paginator_button__u1e7D",
         "ads": "div.SerpSnippet_titleWrapper__38bZM a.blackLink",
     }
-    
+
     data_query = {
-        'title': 'div.AdvertCard_advertTitle__1S1Ak::text',
-        'price': 'div.AdvertCard_price__3dDCr::text',
-        'description': 'div.AdvertCard_descriptionInner__KnuRi::text',
+        "title": "div.AdvertCard_advertTitle__1S1Ak::text",
+        "price": "div.AdvertCard_price__3dDCr::text",
+        "description": "div.AdvertCard_descriptionInner__KnuRi::text",
     }
-    
-    
+
     @staticmethod
     def gen_tasks(response, link_list, callback):
         for link in link_list:
@@ -38,4 +37,4 @@ class AutoyuolaSpider(scrapy.Spider):
         data = {}
         for key, query in self.data_query.items():
             data[key] = response.css(query).get()
-        print(1)
+
