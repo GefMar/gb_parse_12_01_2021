@@ -1,5 +1,5 @@
 import scrapy
-import pymongo
+from gb_parse.loaders import AutoyuolaLoader
 
 
 class AutoyoulaSpider(scrapy.Spider):
@@ -10,36 +10,36 @@ class AutoyoulaSpider(scrapy.Spider):
     css_query = {
         "brands": "div.TransportMainFilters_block__3etab a.blackLink",
         "pagination": "div.Paginator_block__2XAPy a.Paginator_button__u1e7D",
-        "ads": "article.SerpSnippet_snippet__3O1t2 a.blackLink",
+        "ads": "article.SerpSnippet_snippet__3O1t2 a.SerpSnippet_name__3F7Yu.blackLink",
     }
 
-    data_query = {
-        "title": lambda resp: resp.css("div.AdvertCard_advertTitle__1S1Ak::text").get(),
-        "price": lambda resp: float(resp.css('div.AdvertCard_price__3dDCr::text').get().replace("\u2009", '')),
+    data_xpath = {
+        "title": "//div[@data-target='advert-title']/text()",
+        "price": "//div[@data-target='advert-price']/text()",
+        "images": "//figure[contains(@class, 'PhotoGallery_photo')]//img/@src",
+        "description": "//div[@data-target='advert-info-descriptionFull']/text()",
+        "specifications": '//h3[contains(text(), "Характеристики")]/../div/div[contains(@class, "AdvertSpecs_row")]',
+        "author": '//body/script[contains(text(), "window.transitState = decodeURIComponent")]/text()',
     }
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.db_client = pymongo.MongoClient()
 
     def parse(self, response, **kwargs):
         brands_links = response.css(self.css_query["brands"])
         yield from self.gen_task(response, brands_links, self.brand_parse)
 
     def brand_parse(self, response):
-        pagination_links = response.css(self.css_query["pagination"])
-        yield from self.gen_task(response, pagination_links, self.brand_parse)
+        # pagination_links = response.css(self.css_query["pagination"])
+        # yield from self.gen_task(response, pagination_links, self.brand_parse)
         ads_links = response.css(self.css_query["ads"])
         yield from self.gen_task(response, ads_links, self.ads_parse)
 
     def ads_parse(self, response):
-        data = {}
-        for key, selector in self.data_query.items():
-            try:
-                data[key] = selector(response)
-            except (ValueError, AttributeError):
-                continue
-        self.db_client['gb_parse_12_01_2021'][self.name].insert_one(data)
+        loader = AutoyuolaLoader(response=response)
+        loader.add_value("url", response.url)
+
+        for key, selector in self.data_xpath.items():
+            loader.add_xpath(key, selector)
+
+        yield loader.load_item()
 
     @staticmethod
     def gen_task(response, link_list, callback):
