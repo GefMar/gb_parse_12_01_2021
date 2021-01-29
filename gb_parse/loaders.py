@@ -4,7 +4,7 @@ from urllib.parse import urljoin
 from scrapy import Selector
 from scrapy.loader import ItemLoader
 from itemloaders.processors import TakeFirst, MapCompose
-from .items import AutoyuolaItem
+from .items import AutoyuolaItem, HHVacancyItem
 
 
 def get_author_id(item):
@@ -35,14 +35,16 @@ def get_specification(item):
     value = tag.xpath('//div[contains(@class, "AdvertSpecs_data")]//text()').get()
     return {name: value}
 
+
 def specifications_output(values):
-    result ={}
+    result = {}
     for itm in values:
         result.update(itm)
     return result
 
+
 class AutoyuolaLoader(ItemLoader):
-    default_item_class = dict
+    default_item_class = AutoyuolaItem
     url_out = TakeFirst()
     title_out = TakeFirst()
     price_in = MapCompose(clear_unicode, in_float)
@@ -51,3 +53,13 @@ class AutoyuolaLoader(ItemLoader):
     author_out = TakeFirst()
     specifications_in = MapCompose(get_specification)
     specifications_out = specifications_output
+
+
+class HHVacancyLoader(ItemLoader):
+    default_item_class = HHVacancyItem
+    title_out = TakeFirst()
+    url_out = TakeFirst()
+    description_in = "".join
+    description_out = TakeFirst()
+    salary_in = "".join
+    salary_out = TakeFirst()
