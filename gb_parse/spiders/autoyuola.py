@@ -27,8 +27,8 @@ class AutoyoulaSpider(scrapy.Spider):
         yield from self.gen_task(response, brands_links, self.brand_parse)
 
     def brand_parse(self, response):
-        # pagination_links = response.css(self.css_query["pagination"])
-        # yield from self.gen_task(response, pagination_links, self.brand_parse)
+        pagination_links = response.css(self.css_query["pagination"])
+        yield from self.gen_task(response, pagination_links, self.brand_parse)
         ads_links = response.css(self.css_query["ads"])
         yield from self.gen_task(response, ads_links, self.ads_parse)
 
