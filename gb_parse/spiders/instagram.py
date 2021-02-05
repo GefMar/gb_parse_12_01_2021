@@ -43,8 +43,8 @@ class InstagramSpider(scrapy.Spider):
             if response.json().get("authenticated"):
                 for tag in self.tags:
                     yield response.follow(f"/explore/tags/{tag}/", callback=self.tag_parse)
-                # for user in self.users:
-                #     yield response.follow(f"/{user}/", callback=self.user_page_parse)
+                for user in self.users:
+                    yield response.follow(f"/{user}/", callback=self.user_page_parse)
 
     def user_page_parse(self, response):
         user_data = self.js_data_extract(response)["entry_data"]["ProfilePage"][0]["graphql"][
